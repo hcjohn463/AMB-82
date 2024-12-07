@@ -5,11 +5,11 @@
 #include "NNObjectDetection.h"
 #include "VideoStreamOverlay.h"
 
-// 硬件警报配置0
+// 硬件警报配置
 #define LED_PIN 0    // LED 引脚
 #define BUZZER_PIN 1 // 蜂鸣器引脚
 
-// 视频流与模型配置（保持不变）
+// 视频流与模型配置
 #define CHANNEL   0
 #define CHANNELNN 3
 #define NNWIDTH 576
@@ -26,6 +26,7 @@ IPAddress ip;
 
 // 警报状态变量
 bool alarmStatus = false;
+
 void handleAlarm(bool status) {
     if (status) {
         digitalWrite(LED_PIN, HIGH);
@@ -35,6 +36,7 @@ void handleAlarm(bool status) {
         noTone(BUZZER_PIN); // 关闭蜂鸣器
     }
 }
+
 void setup() {
     Serial.begin(115200);
 
@@ -44,7 +46,7 @@ void setup() {
     digitalWrite(LED_PIN, LOW);
     digitalWrite(BUZZER_PIN, LOW);
 
-    // 配置摄像头与视频流（保持不变）
+    // 配置摄像头与视频流
     config.setBitrate(2 * 1024 * 1024); // 设置比特率
     Camera.configVideoChannel(CHANNEL, config);
     Camera.configVideoChannel(CHANNELNN, configNN);
@@ -132,16 +134,16 @@ void loop() {
 
             float confidence = item.score(); // 置信度
 
-            // 打印检测结果到串口
-
-            Serial.print("RTSP URL: rtsp://");
+            // 输出 JSON 格式数据
+            Serial.print("{\"RTSP\": \"rtsp://");
             Serial.print(WiFi.localIP());
             Serial.print(":");
             Serial.print(rtsp.getPort());
-            Serial.print(", Detected: ");
+            Serial.print("\", \"Detected\": \"");
             Serial.print(detectedClass);
-            Serial.print(", Confidence: ");
-            Serial.println(confidence);
+            Serial.print("\", \"Confidence\": ");
+            Serial.print(confidence, 2);
+            Serial.println("}");
 
             // 绘制边框
             OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_GREEN);
