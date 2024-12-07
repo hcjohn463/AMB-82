@@ -12,8 +12,8 @@
 // 视频流与模型配置
 #define CHANNEL   0
 #define CHANNELNN 3
-#define NNWIDTH 576
-#define NNHEIGHT 320
+#define NNWIDTH 640
+#define NNHEIGHT 640
 
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
@@ -81,6 +81,8 @@ void setup() {
     OSD.begin();
 }
 
+const float confidenceThreshold = 50;
+
 void loop() {
     // 处理串口输入
     if (Serial.available() > 0) {
@@ -133,6 +135,10 @@ void loop() {
             }
 
             float confidence = item.score(); // 置信度
+
+            if (confidence < confidenceThreshold){
+              continue;
+            }
 
             // 输出 JSON 格式数据
             Serial.print("{\"RTSP\": \"rtsp://");
