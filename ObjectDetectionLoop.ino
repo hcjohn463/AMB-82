@@ -140,6 +140,9 @@ void loop() {
               continue;
             }
 
+            // 设置框的颜色，根据 detectedClass 值决定
+            int boxColor = (detectedClass == "open") ? OSD_COLOR_GREEN : OSD_COLOR_RED;
+
             // 输出 JSON 格式数据
             Serial.print("{\"RTSP\": \"rtsp://");
             Serial.print(WiFi.localIP());
@@ -152,7 +155,7 @@ void loop() {
             Serial.println("}");
 
             // 绘制边框
-            OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_GREEN);
+            OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, boxColor);
             char text_str[50];
             snprintf(text_str, sizeof(text_str), "%s %.2f", detectedClass.c_str(), confidence);
             OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
