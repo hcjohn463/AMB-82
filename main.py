@@ -1,5 +1,6 @@
 import sys
 import serial
+import json
 import time
 import vlc
 from PyQt5.QtWidgets import (
@@ -9,7 +10,7 @@ from PyQt5.QtGui import QFont
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal, QThread, pyqtSlot
 
 # 串口配置
-ARDUINO_PORT = 'COM4'  # 替換為您的 Arduino 所連接的串口端口
+ARDUINO_PORT = 'COM3'  # 替換為您的 Arduino 所連接的串口端口
 BAUD_RATE = 115200
 
 # 定義類別映射
@@ -17,7 +18,7 @@ categories = ["Close", "Open"]  # 根據您的模型類別進行調整
 
 class SerialThread(QThread):
     """串口通信線程，負責與 Arduino 進行通信"""
-    data_received = pyqtSignal(str)
+    data_received = pyqtSignal(dict)
 
     def __init__(self, port, baud_rate):
         super().__init__()
@@ -41,7 +42,18 @@ class SerialThread(QThread):
                 line = self.serial_conn.readline().decode(errors='ignore').strip()
                 if line:
                     print(f"從 Arduino 接收到數據：{line}")
-                    self.data_received.emit(line)
+                    try:
+                        # 尝试解析 JSON 数据
+                        # 如果數據是列表，則跳過不執行 emit()
+                        data = json.loads(line)
+                        if isinstance(data, list):
+                            print("接收到的是列表，跳過 emit()")
+                            continue  # 跳過這次循環，不執行 emit()
+
+                        # 如果數據是字典，則執行 emit()
+                        self.data_received.emit(data)
+                    except json.JSONDecodeError:
+                        print(f"無法解析的串口數據：{line}")
             else:
                 time.sleep(0.1)
 
@@ -59,9 +71,6 @@ class SerialThread(QThread):
             print("串口已關閉")
 
 class MainWindow(QMainWindow):
-    # 定義信號，用於更新界面
-    update_detection_signal = pyqtSignal(str, float)
-
     def __init__(self, serial_thread):
         super().__init__()
         self.setWindowTitle("疲勞檢測系統")
@@ -97,8 +106,20 @@ class MainWindow(QMainWindow):
             self.media_player.set_nsobject(int(self.video_label.winId()))
 
         # 初始化時不播放 RTSP 流，等待用戶手動開始
-        self.rtsp_url = "rtsp://<Arduino_IP>:554"  # 替換為實際的 RTSP URL
-        # 您可以在界面上添加一個按鈕，讓用戶輸入或設置 Arduino 的 IP 地址
+        self.rtsp_url = None
+
+        # 顯示 Arduino IP 地址的部分
+        self.ip_display_label = QLabel("RTSP URL: 未知")
+        self.ip_display_label.setFont(QFont("微軟正黑體", 14, QFont.Bold))
+        self.ip_display_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.ip_display_label)
+
+        # 開啟鏡頭的按鈕
+        self.start_camera_button = QPushButton("開啟鏡頭")
+        self.start_camera_button.setFixedSize(150, 80)
+        self.start_camera_button.setFont(QFont("微軟正黑體", 16, QFont.Bold))
+        self.start_camera_button.clicked.connect(self.start_rtsp_stream)
+        layout.addWidget(self.start_camera_button)
 
         # 中間狀態顯示
         self.status_label = QLabel("預測狀態：等待中")
@@ -129,89 +150,60 @@ class MainWindow(QMainWindow):
         self.alert_button.clicked.connect(self.dismiss_alert)
         control_layout.addWidget(self.alert_button)
 
-        # 新增的切換按鈕
-        self.toggle_button = QPushButton("切換狀態")
-        self.toggle_button.setFixedSize(150, 80)
-        self.toggle_button.setFont(font)
-        self.toggle_button.clicked.connect(self.toggle_state)
-        control_layout.addWidget(self.toggle_button)
+        # # 新增的切換按鈕
+        # self.toggle_button = QPushButton("切換狀態")
+        # self.toggle_button.setFixedSize(150, 80)
+        # self.toggle_button.setFont(font)
+        # self.toggle_button.clicked.connect(self.toggle_state)
+        # control_layout.addWidget(self.toggle_button)
 
         layout.addLayout(control_layout)
 
         # 狀態變量
-        self.prediction = None
-        self.fatigue_count = 0
-        self.alert_active = False  # 警報是否激活
-        self.fatigue_threshold = 5  # 連續疲勞判定閾值（秒）
-
-        # 定時器刷新狀態
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_status)
-        self.timer.start(100)  # 每 100 毫秒刷新一次
-
-        # 連接信號和槽
-        self.update_detection_signal.connect(self.handle_prediction)
+        self.fatigue_timer = 0  # 用於累積 Close 狀態的時間
+        self.alert_triggered = False  # 標記警報是否已觸發
+        self.fatigue_threshold = 5  # 警報觸發的累積時間閾值（秒）
 
     def start_rtsp_stream(self):
         """開始播放 RTSP 流"""
-        self.media_player.set_media(self.instance.media_new(self.rtsp_url))
-        self.media_player.play()
-        print(f"開始播放 RTSP 流：{self.rtsp_url}")
+        if self.rtsp_url:
+            self.media_player.set_media(self.instance.media_new(self.rtsp_url))
+            self.media_player.play()
+            print(f"開始播放 RTSP 流：{self.rtsp_url}")
 
     def handle_serial_data(self, data):
-        """處理從 Arduino 接收到的數據"""
-        if data.startswith("Detected:"):
-            # 解析檢測結果
-            try:
-                # 例如："Detected: close, Confidence: 0.85"
-                parts = data.replace("Detected:", "").split(",")
-                detected_class = parts[0].strip()
-                confidence_str = parts[1].split(":")[1].strip()
-                confidence = float(confidence_str)
-                self.update_detection_signal.emit(detected_class, confidence)
-            except Exception as e:
-                print(f"解析檢測結果時出錯：{e}")
+        """處理從 Arduino 接收到的 JSON 數據"""
+        rtsp_url = data.get("RTSP", "未知")
+        detected_class = data.get("Detected", "未知")
+        confidence = data.get("Confidence", 0.0)
 
-    def update_status(self):
-        """定時器觸發，用於界面刷新（如果需要）"""
-        pass  # 由於我們使用信號槽機制，實時更新界面，不需要在這裡進行操作
-
-    @pyqtSlot(str, float)
-    def handle_prediction(self, detected_class, confidence):
-        # 將檢測的類別映射到類別 ID
-        if detected_class.lower() == "close":
-            class_id = 0
-        elif detected_class.lower() == "open":
-            class_id = 1
-        else:
-            class_id = -1  # 未知類別
-
-        fatigue_class = 0  # 假設 `0` 表示 `Close`
-        if class_id >= 0 and class_id < len(categories):
-            prediction_label = categories[class_id]
-        else:
-            prediction_label = "未知"
-
-        self.status_label.setText(f"預測狀態：{prediction_label} (置信度：{confidence:.2f})")
-        self.label_display.setText(f"類別：{prediction_label}")
+        # 更新界面
+        self.ip_display_label.setText(f"RTSP URL: {rtsp_url}")
+        self.label_display.setText(f"類別：{detected_class}")
         self.prob_display.setText(f"置信度：{confidence:.2f}")
 
-        if class_id == fatigue_class:
-            self.fatigue_count += 0.1
-            if self.fatigue_count >= self.fatigue_threshold and not self.alert_active:
-                self.alert_active = True
+        if not self.rtsp_url:
+            self.rtsp_url = rtsp_url
+
+        if self.alert_triggered:
+            return  # 如果警報已觸發，維持當前狀態
+
+        if detected_class.lower() == "close":
+            self.fatigue_timer += 0.1  # 每次累積 100 毫秒
+            if self.fatigue_timer >= self.fatigue_threshold:
+                self.alert_triggered = True
                 self.alert_button.setEnabled(True)
-                self.status_label.setText(f"警報：檢測到疲勞狀態 ({prediction_label})！")
-                # 發送警報命令到 Arduino
+                self.status_label.setText("預測狀態：睡著")
                 self.serial_thread.send_command("ALARM_ON")
-        else:
-            self.fatigue_count = 0
+        elif detected_class.lower() == "open":
+            self.fatigue_timer = 0
+            self.status_label.setText("預測狀態：清醒")
 
     def dismiss_alert(self):
         self.alert_button.setEnabled(False)
-        self.alert_active = False
+        self.alert_triggered = False
+        self.fatigue_timer = 0
         self.status_label.setText("預測狀態：等待中")
-        # 發送關閉警報命令到 Arduino
         self.serial_thread.send_command("ALARM_OFF")
 
     def toggle_state(self):
