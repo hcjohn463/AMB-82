@@ -127,25 +127,33 @@ bool alarmStatus = false;
 #define NOTE_DS8 4978
 
 int melody[] = {
-    NOTE_G4, NOTE_G4, NOTE_E4, NOTE_D4, NOTE_E4, NOTE_D4, NOTE_C4,
-    NOTE_E4, NOTE_D4, NOTE_C4, NOTE_A3, NOTE_G3, NOTE_A3, NOTE_G3,
-    NOTE_A3, NOTE_A3, NOTE_C4, NOTE_A3, NOTE_C4, NOTE_D4, NOTE_E4,
-    NOTE_D4, NOTE_D4, NOTE_G4, NOTE_G4, NOTE_E4, NOTE_D4, NOTE_C4};
+    NOTE_E4, NOTE_D4, NOTE_C4, NOTE_D4, NOTE_E4, NOTE_E4, NOTE_E4, // 小蜜蜂前半部分
+    NOTE_D4, NOTE_D4, NOTE_D4, NOTE_E4, NOTE_G4, NOTE_G4,          // 继续旋律
+    NOTE_E4, NOTE_D4, NOTE_C4, NOTE_D4, NOTE_E4, NOTE_E4, NOTE_E4, // 后半部分
+    NOTE_E4, NOTE_D4, NOTE_D4, NOTE_E4, NOTE_D4, NOTE_C4           // 结束
+};
 
 int noteDurations[] = {
-    6, 16, 8, 8, 8, 8, 4,
-    6, 16, 8, 8, 8, 8, 4,
-    6, 16, 8, 8, 8, 8, 4,
-    6, 16, 8, 8, 8, 8, 4};
+    8, 8, 8, 8, 8, 8, 4, // 节奏对应小蜜蜂前半部分3
+    8, 8, 4, 8, 8, 4,    // 继续节奏
+    8, 8, 8, 8, 8, 8, 4, // 后半部分节奏
+    8, 8, 8, 8, 8, 4     // 结束
+};
 
+int note = 0;
 void play(int *melody, int *noteDurations, int num)
 {
-    for (int note = 0; note < num; note++) {
-        int noteDuration = 3000 / noteDurations[note];
+    int noteDuration = 3000 / noteDurations[note];
 
-        tone(BUZZER_PIN, melody[note], noteDuration);
+    tone(BUZZER_PIN, melody[note], noteDuration);
 
-        delay(noteDuration * 1.30);
+    delay(noteDuration * 1.0);
+
+    if(note == num-1){
+      note = 0;
+    }
+    else{
+      note++;
     }
 }
 void handleAlarm(bool status) {
@@ -156,6 +164,7 @@ void handleAlarm(bool status) {
     }else {
         digitalWrite(LED_PIN, LOW);
         noTone(BUZZER_PIN); // 关闭蜂鸣器
+        note = 0;
     }
 }
 
@@ -179,8 +188,8 @@ void setup() {
     rtsp.begin();
 
     // 连接到Wi-Fi
-    char* ssid = "3H1F WIFI-2.4G";
-    char* password = "54585839";
+    char* ssid = "子晏iphone喔";
+    char* password = "matt9015";
     WiFi.begin(ssid, password);
 
     // 配置目标检测模型
